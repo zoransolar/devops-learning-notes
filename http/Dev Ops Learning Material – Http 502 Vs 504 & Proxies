@@ -1,0 +1,169 @@
+# HTTP 502 vs 504 – LOAD BALANCER & PROXY MENTALNI MODEL
+
+> Ovo je **jedan od najvažnijih dokumenata za DevOps razmišljanje**.
+> Ako ovo razumeš – pola produkcionih incidenata će ti biti jasnije.
+
+---
+
+## LEKCIJA 1: GDE SE POJAVLJUJU 502 I 504?
+
+### 1️⃣ Ključna činjenica (ZAPAMTI)
+
+> **502 i 504 NE dolaze od aplikacije.**
+> Dolaze od **posrednika**.
+
+Ti posrednici su:
+
+* Load Balancer
+* Reverse Proxy (Nginx, Traefik, Envoy)
+* API Gateway
+
+Ako nema posrednika → skoro nikad nećeš videti 502/504.
+
+---
+
+## LEKCIJA 2: MENTALNI MODEL (NAJBITNIJE)
+
+Zamisli lanac:
+
+```
+KLIJENT → PROXY → APLIKACIJA
+```
+
+Proxy je:
+
+* prevodilac
+* zaštitar
+* saobraćajni policajac
+
+On prima request od klijenta i **prosleđuje** ga aplikaciji.
+
+---
+
+## LEKCIJA 3: ŠTA JE 502 – BAD GATEWAY
+
+### 1️⃣ Šta znači 502?
+
+> Proxy je pokušao da priča sa aplikacijom,
+> ali je dobio **loš ili nevažeći odgovor**.
+
+---
+
+### 2️⃣ Tipični uzroci 502
+
+* aplikacija je pala
+* pogrešan port
+* pogrešan protocol (HTTP vs HTTPS)
+* aplikacija se restartuje
+
+Mentalna slika:
+
+> Proxy kuca na vrata aplikacije – niko ne odgovara kako treba.
+
+---
+
+### 3️⃣ Kako 502 izgleda u realnosti
+
+* deploy u toku
+* container se restartuje
+* backend još nije spreman
+
+Proxy kaže klijentu:
+
+> "Ne mogu da dobijem normalan odgovor od backend-a"
+
+---
+
+## LEKCIJA 4: ŠTA JE 504 – GATEWAY TIMEOUT
+
+### 1️⃣ Šta znači 504?
+
+> Proxy je poslao request aplikaciji,
+> ali je **čekao predugo**.
+
+---
+
+### 2️⃣ Tipični uzroci 504
+
+* aplikacija je spora
+* baza ne odgovara
+* deadlock
+* timeout u mreži
+
+Mentalna slika:
+
+> Proxy stoji i čeka… i čeka… i odustaje.
+
+---
+
+## LEKCIJA 5: 502 vs 504 – KLJUČNA RAZLIKA
+
+| Kod | Problem                |
+| --- | ---------------------- |
+| 502 | Neispravan odgovor     |
+| 504 | Nema odgovora na vreme |
+
+Jedna rečenica:
+
+* **502** = nešto je pogrešno
+* **504** = nešto je presporo
+
+---
+
+## LEKCIJA 6: DEVOPS DEBUG FLOW (ZLATNO PRAVILO)
+
+Ako vidiš **502**:
+
+1. Proveri da li aplikacija radi
+2. Proveri port
+3. Proveri protocol
+
+Ako vidiš **504**:
+
+1. Proveri response time
+2. Proveri bazu
+3. Proveri timeouts
+
+❌ Nikad ne počinji od frontenda.
+
+---
+
+## LEKCIJA 7: KAKO SE OVO VIDI U PRODUKCIJI
+
+### Logovi
+
+* proxy access log → status 502/504
+* backend log → često PRAZAN kod 504
+
+### Monitoring
+
+* povećan latency
+* CPU / Memory spike
+
+---
+
+## LEKCIJA 8: JEDNA STVAR ZA PAMĆENJE
+
+> 502 i 504 su **proxy problemi**, ne browser problemi.
+
+Ako to znaš:
+
+* znaš gde da gledaš
+* štediš sate debugovanja
+
+---
+
+## LEKCIJA 9: PITANJA ZA RAZMIŠLJANJE
+
+* Zašto 504 često nema backend log?
+* Zašto deploy često izaziva 502?
+* Gde se timeout konfiguriše?
+
+(Ovo ostavi za sledeću vožnju.)
+
+---
+
+📌 Sledeći dokument:
+
+* Reverse Proxy (Traefik / Nginx) – bez konfiguracije
+* Kako HTTP prelazi u HTTPS

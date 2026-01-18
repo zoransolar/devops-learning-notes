@@ -1,0 +1,224 @@
+# HTTP FUNDAMENTALS – UČENJE ZA AUTOBUS
+
+> Cilj ovog materijala je **razumevanje**, ne memorisanje.
+> Čita se polako, sa telefona, 20–30 minuta po sesiji.
+
+---
+
+## LEKCIJA 1: ŠTA JE HTTP?
+
+### 1️⃣ Šta je HTTP (najprostije moguće)
+
+HTTP je **dogovoreni način komunikacije** između:
+
+* klijenta (browser, mobilna aplikacija, curl)
+* servera (backend aplikacija, API, gateway)
+
+👉 Klijent *traži* nešto, server *odgovara*.
+
+Ako nema HTTP-a:
+
+* browser ne zna kako da pita
+* server ne zna kako da odgovori
+
+---
+
+### 2️⃣ Zašto je HTTP napravljen?
+
+Problem koji je postojao:
+
+* različiti računari
+* različiti operativni sistemi
+* različite mreže
+
+Rešenje:
+
+* jedan **standardni protokol** koji svi razumeju
+
+HTTP je:
+
+* tekstualan (lak za debug)
+* jednostavan
+* proširiv
+
+---
+
+### 3️⃣ Mentalni model (VEOMA BITNO)
+
+Razmišljaj ovako:
+
+HTTP = razgovor u restoranu
+
+* Klijent = gost
+* Server = konobar
+* Request = porudžbina
+* Response = jelo + račun
+
+Ako gost traži nešto što ne postoji → konobar to kaže.
+Ako kuhinja ima problem → konobar to kaže.
+
+HTTP status kodovi su **objašnjenja šta se desilo**.
+
+---
+
+## LEKCIJA 2: HTTP REQUEST
+
+### 1️⃣ Šta je HTTP request?
+
+Request je poruka koju klijent šalje serveru.
+
+Sadrži:
+
+* ŠTA želi
+* GDE želi
+* KAKO želi
+
+---
+
+### 2️⃣ Glavni delovi request-a
+
+1. **Method** – šta želiš da uradiš
+2. **URL** – gde
+3. **Headers** – dodatne informacije
+4. **Body** – podaci (nekad postoji)
+
+---
+
+### 3️⃣ HTTP metode (NE UČI NAPAMET)
+
+Razumi logiku:
+
+* GET → "daj mi podatke"
+* POST → "evo ti podaci"
+* PUT → "zameni postojeće"
+* PATCH → "izmeni deo"
+* DELETE → "obriši"
+
+Mentalni model:
+
+* GET = čitanje
+* POST = kreiranje
+* PUT/PATCH = izmena
+* DELETE = brisanje
+
+---
+
+## LEKCIJA 3: HTTP RESPONSE
+
+### 1️⃣ Šta je response?
+
+Response je **odgovor servera** na request.
+
+Sadrži:
+
+* status kod
+* headers
+* body (nekad)
+
+---
+
+### 2️⃣ Status kodovi – NAJBITNIJE
+
+Status kod = iskren odgovor servera
+
+On govori:
+
+* da li je request uspeo
+* ako nije, ZAŠTO
+
+---
+
+### 3️⃣ Kategorije status kodova
+
+* 1xx → informacija (retko vidiš)
+* 2xx → uspeh
+* 3xx → redirekcija
+* 4xx → greška klijenta
+* 5xx → greška servera
+
+⚠️ DevOps pravilo:
+
+> 4xx = neko je loše pitao
+> 5xx = sistem ima problem
+
+---
+
+## LEKCIJA 4: 404 vs 500 (KLJUČNA RAZLIKA)
+
+### 404 – Not Found
+
+Znači:
+
+* server radi
+* ali resurs ne postoji
+
+Primer:
+
+* pogrešan URL
+* obrisan endpoint
+
+---
+
+### 500 – Internal Server Error
+
+Znači:
+
+* server je dobio request
+* ali je pukao dok ga je obrađivao
+
+Primer:
+
+* bug u kodu
+* baza ne radi
+* timeout
+
+---
+
+### DevOps realnost
+
+Ako vidiš mnogo:
+
+* 404 → proveri routing, ingress, path
+* 500 → proveri logove, metrike, baze
+
+---
+
+## LEKCIJA 5: KAKO SE OVO VIDI U PRODUKCIJI
+
+### Logovi
+
+* access log → vidiš request + status
+* error log → vidiš zašto je puklo
+
+### Monitoring
+
+* spike u 5xx = incident
+* spike u 4xx = klijentski problem ili deploy
+
+---
+
+## LEKCIJA 6: JEDNA STVAR ZA PAMĆENJE
+
+> HTTP ne govori *šta je server*, već *šta se desilo*.
+
+Ako razumeš status kodove:
+
+* razumeš pola produkcionih problema.
+
+---
+
+## LEKCIJA 7: PITANJA ZA RAZMIŠLJANJE (NE ODGOVARAJ ODMAH)
+
+* Da li 404 znači da server ne radi?
+* Da li 500 znači da je mreža problem?
+* Gde bi video 502 / 504?
+
+(Ovo ostavi za sutra u autobusu.)
+
+---
+
+📌 Sledeći dokument će biti:
+
+* 502 vs 504
+* Load Balancer i reverse proxy
+* Kako HTTP prelazi u HTTPS

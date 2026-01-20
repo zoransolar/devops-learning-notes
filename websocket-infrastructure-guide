@@ -1,0 +1,1067 @@
+# WebSocket Infrastructure Guide
+## Kompletan vodič kroz sockete, WebSocket konekcije i infrastructure setup
+
+---
+
+## 📚 Sadržaj
+
+1. [Stateful vs Stateless konekcije](#stateful-vs-stateless)
+2. [Šta je socket](#šta-je-socket)
+3. [Linux socket limits i resursi](#linux-socket-limits)
+4. [WebSocket kroz infrastructure layere](#websocket-kroz-infrastructure)
+5. [HAProxy memory consumption](#haproxy-memory-consumption)
+6. [Docker containeri i socketi](#docker-containeri-i-socketi)
+7. [SignalR i Redis backplane](#signalr-i-redis-backplane)
+8. [Praktični primjeri i debugging](#praktični-primjeri)
+
+---
+
+## Stateful vs Stateless
+
+### HTTP - Stateless Connection
+
+```
+Request 1:
+Client → TCP konekcija → Server
+Client ← Response ← Server
+[Konekcija se ZATVARA]
+
+Request 2:
+Client → NOVA TCP konekcija → Server
+Client ← Response ← Server
+[Konekcija se ZATVARA]
+```
+
+**Karakteristike:**
+- Server NE PAMTI stanje između requesta
+- Svaki request je nezavisan
+- Malo memory overhead-a
+- Lako skalirati horizontalno
+
+**Memory po requestu:**
+```
+Aktivna konekcija: ~40 KB (kratkotrajna)
+Prosječno vrijeme: ~100-500ms
+Server može handleovati hiljade req/s sa malo RAM-a
+```
+
+---
+
+### WebSocket - Stateful Connection
+
+```
+Inicijalizacija:
+Client → HTTP Upgrade → Server
+Server → 101 Switching Protocols → Client
+[Konekcija OSTAJE OTVORENA]
+
+Komunikacija:
+Client ↔ Poruke ↔ Server
+Client ↔ Poruke ↔ Server
+[Ista konekcija, satima!]
+```
+
+**Karakteristike:**
+- Server PAMTI svaku otvorenu konekciju
+- Bidirekcional communication
+- Persistent connection (satima otvorena)
+- Više memory overhead-a
+- Složenije skaliranje (sticky sessions ili message broker)
+
+**Memory po konekciji:**
+```
+TCP socket buffers: ~128 KB (kernel)
+Application state: ~50-100 KB (.NET SignalR)
+Connection metadata: ~20 KB
+────────────────────────────────────
+TOTAL: ~200 KB po aktivnoj konekciji
+```
+
+---
+
+### Uporedba
+
+| Aspekt | HTTP (Stateless) | WebSocket (Stateful) |
+|--------|------------------|----------------------|
+| **Trajanje** | 100-500ms po requestu | Satima otvorena |
+| **Memory po conn** | ~40 KB | ~200 KB |
+| **Server state** | Ne pamti ništa | Pamti svaku konekciju |
+| **Skaliranje** | Lako (round-robin) | Složeno (sticky/Redis) |
+| **Use case** | REST API, file upload | Chat, live updates, gaming |
+| **Latency** | Viša (new conn svaki put) | Niska (reuse connection) |
+
+---
+
+## Šta je socket
+
+### Definicija
+
+**Socket = endpoint komunikacije između dva procesa**
+
+```
+Socket JE:
+- File descriptor (broj, npr. fd=42)
+- TCP/UDP connection endpoint
+- Način da proces čita/piše na mrežu
+
+Socket NIJE:
+- Fajl na disku
+- Poseban tip memorije
+- Fizički hardware
+```
+
+---
+
+### Tipovi socketa
+
+#### 1. TCP Socket (SOCK_STREAM)
+```
+Karakteristike:
+✓ Pouzdan (guaranteed delivery)
+✓ Po redu (ordered)
+✓ Connection-oriented
+✓ Error checking & retransmission
+✗ Sporiji od UDP
+
+Use case:
+- HTTP/HTTPS
+- WebSocket
+- SSH, FTP
+- Database connections
+```
+
+#### 2. UDP Socket (SOCK_DGRAM)
+```
+Karakteristike:
+✓ Brz
+✓ Connectionless
+✗ Nepouzdan (može se izgubiti)
+✗ Nije garantovan redosled
+
+Use case:
+- Video streaming
+- Online gaming
+- DNS queries
+- VoIP
+```
+
+#### 3. Unix Domain Socket
+```
+Karakteristike:
+✓ Samo lokalno (isti server)
+✓ Najbrži (nema network overhead)
+✓ Vidi se kao fajl u filesystem-u
+
+Use case:
+- Docker daemon (/var/run/docker.sock)
+- PostgreSQL local connection
+- Process-to-process communication
+
+Primjer:
+ls -la /var/run/docker.sock
+srw-rw---- 1 root docker 0 docker.sock
+ ↑
+'s' = socket file
+```
+
+---
+
+### Anatomija TCP socketa
+
+```
+Socket struktura u Linux kernelu:
+
+struct socket {
+    // Identifikacija:
+    Local IP:Port      192.168.1.10:5000
+    Remote IP:Port     93.45.67.89:54321
+    
+    // Stanje:
+    State              ESTABLISHED
+    
+    // Buffers (u kernel memoriji!):
+    Send Buffer        64 KB (default)
+    Receive Buffer     64 KB (default)
+    
+    // TCP metadata:
+    Sequence numbers
+    Window size
+    Congestion control state
+    Retransmission queue
+}
+```
+
+**File descriptor = samo broj koji pokazuje na ovu strukturu!**
+
+---
+
+## Linux Socket Limits
+
+### Default limiti
+
+```bash
+# Per-process limit (file descriptors):
+ulimit -n
+1024  # Default - PREMALO za WebSocket servere!
+
+# System-wide limit:
+cat /proc/sys/fs/file-max
+9223372036854775807  # Teoretski maksimum
+
+# Active file descriptors:
+cat /proc/sys/fs/file-nr
+2080    0    9223372036854775807
+ ↑      ↑    ↑
+open  free  max
+```
+
+### Problem sa WebSocket serverima
+
+```
+Scenario:
+- 10,000 WebSocket konekcija
+- Svaka konekcija = 1 file descriptor
+- Default limit = 1024
+
+Problem:
+10,000 > 1024 = "Too many open files" ❌
+```
+
+### Povećanje limita
+
+#### Temporary (za testiranje):
+```bash
+# Current session:
+ulimit -n 65536
+```
+
+#### Permanent (production):
+```bash
+# /etc/security/limits.conf
+*    soft nofile 65536
+*    hard nofile 65536
+
+# /etc/sysctl.conf
+fs.file-max = 2097152
+```
+
+#### Za Docker containere:
+```hcl
+# Nomad job file:
+task "web-api" {
+  config {
+    ulimit {
+      nofile = "65536:65536"
+    }
+  }
+}
+```
+
+---
+
+### Memory consumption po socketu
+
+#### Kernel overhead (TCP socket):
+
+```
+TCP socket struktura: ~2 KB
+Send buffer (default): 64 KB
+Receive buffer (default): 64 KB
+Connection tracking: ~0.3 KB (netfilter)
+────────────────────────────────────
+TOTAL: ~130 KB po socketu (u kernelu!)
+```
+
+#### Optimizirani bufferi za WebSocket:
+
+```bash
+# Default:
+net.ipv4.tcp_rmem = 4096  87380  6291456
+net.ipv4.tcp_wmem = 4096  65536  4194304
+                     ↑      ↑       ↑
+                    min  default  max
+
+# Optimizovano za WebSocket (mali frame-ovi):
+sysctl -w net.ipv4.tcp_rmem="4096 32768 2097152"
+sysctl -w net.ipv4.tcp_wmem="4096 32768 2097152"
+
+Ušteda: ~55 KB po socketu!
+10,000 socketa: 550 MB uštede
+```
+
+#### Connection tracking limit:
+
+```bash
+# Kernel prati konekcije za firewall/NAT:
+cat /proc/sys/net/netfilter/nf_conntrack_max
+65536  # Default
+
+# Za 100,000 konekcija:
+sysctl -w net.netfilter.nf_conntrack_max=200000
+
+# Memory: 200,000 × 300 bytes = 60 MB
+```
+
+---
+
+### Proračun za 10,000 WebSocket konekcija
+
+```
+Kernel TCP socketi:
+  10,000 × 130 KB = 1,300 MB
+
+HAProxy overhead:
+  10,000 × 35 KB = 350 MB
+
+File descriptors:
+  10,000 × ~0 (samo broj) = 0 MB
+
+Connection tracking:
+  10,000 × 0.3 KB = 3 MB
+
+OS + aplikacije:
+  ~1,000 MB
+
+────────────────────────────────────
+TOTAL: ~2,650 MB (~3 GB)
+
+Preporuka: 8 GB RAM server ✅
+Free memory: ~5 GB
+```
+
+---
+
+## WebSocket kroz Infrastructure
+
+### Kompletan Stack
+
+```
+┌────────────────────────────┐
+│ Browser (User)             │
+│ fd=11 → WebSocket object   │
+└────────────┬───────────────┘
+             │ Internet (TCP)
+┌────────────┴───────────────┐
+│ HAProxy (Native Linux)     │
+│ fd=567 → socket (client)   │
+│ fd=890 → socket (Traefik)  │
+└────────────┬───────────────┘
+             │ Internal network
+┌────────────┴───────────────┐
+│ Traefik (Docker)           │
+│ fd=123 → socket (HAProxy)  │
+│ fd=456 → socket (web-api)  │
+└────────────┬───────────────┘
+             │ Docker bridge
+┌────────────┴───────────────┐
+│ Web-API (Docker .NET)      │
+│ fd=42 → socket (Traefik)   │
+│ fd=100 → socket (Redis)    │
+└────────────┬───────────────┘
+             │
+┌────────────┴───────────────┐
+│ Redis (Docker)             │
+│ Pub/Sub backplane          │
+└────────────────────────────┘
+```
+
+**Za JEDNU WebSocket konekciju = 7 socketa ukupno!**
+
+---
+
+### WebSocket handshake kroz HAProxy
+
+#### Faza 1: HTTP Mode (Upgrade)
+
+```
+Client:
+GET /bettingHub HTTP/1.1
+Host: betting.com
+Connection: Upgrade
+Upgrade: websocket
+Sec-WebSocket-Key: xyz...
+
+HAProxy (HTTP mode):
+- Čita HTTP headere
+- Vidi "Connection: Upgrade"
+- Forward-uje serveru
+
+Server:
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+
+HAProxy:
+- Vidi 101 status
+- Prelazi u TUNNEL MODE!
+```
+
+**Timeout-i u ovoj fazi:**
+- `timeout client` - čeka podatke od browsera
+- `timeout connect` - čeka TCP konekciju sa serverom
+- `timeout server` - čeka response od servera
+
+#### Faza 2: Tunnel Mode (WebSocket)
+
+```
+HAProxy:
+- PRESTAJE da čita protokol
+- Samo forward-uje raw bytes
+- Transparent proxy
+
+Client ↔ HAProxy ↔ Server
+     (binary frames)
+```
+
+**Timeout u ovoj fazi:**
+- `timeout tunnel` - MAX idle time (MORA biti dugo! 1h+)
+
+---
+
+### Zašto 2 layera (HAProxy + Traefik)?
+
+#### HAProxy (Edge Layer)
+```
+Zadaci:
+✓ SSL/TLS termination
+✓ Public IP endpoint
+✓ DDoS protection
+✓ Rate limiting
+✓ WAF (Web Application Firewall)
+✗ Statička konfiguracija
+
+Instalacija:
+- Native na Linux serveru (/usr/sbin/haproxy)
+- systemd service
+```
+
+#### Traefik (Service Mesh Layer)
+```
+Zadaci:
+✓ Service discovery (Consul integration)
+✓ Dynamic routing (auto-detektuje Nomad servise)
+✓ Per-service load balancing
+✓ Health checks
+✗ Ne radi SSL termination
+
+Instalacija:
+- Docker container
+- Deploy-ovan preko Nomada
+```
+
+**Kombinacija = Best of both worlds!**
+
+---
+
+## HAProxy Memory Consumption
+
+### Bazni overhead
+
+```
+HAProxy proces:
+- Binary: ~3 MB
+- Shared libraries: ~10 MB
+- Runtime metadata: ~50 MB
+────────────────────────────
+Base: ~60-70 MB (fiksno)
+```
+
+### Per-connection overhead
+
+#### HTTP Mode (Layer 7)
+```
+Request buffer: 16 KB
+Response buffer: 16 KB
+Header parsing: 4-8 KB
+Metadata: 2 KB
+────────────────────────────
+~35-40 KB po HTTP konekciji
+```
+
+#### Tunnel Mode (Layer 4 - WebSocket)
+```
+Input buffer: 16 KB (tune.bufsize)
+Output buffer: 16 KB (tune.bufsize)
+Metadata: 1-2 KB
+────────────────────────────
+~32-35 KB po WebSocket konekciji ✅
+```
+
+**Tunnel mode je efikasniji!**
+
+---
+
+### Realni brojevi
+
+#### 10,000 WebSocket konekcija:
+
+```
+HAProxy process:
+  Base overhead: 70 MB
+  Connections: 10,000 × 35 KB = 350 MB
+  ────────────────────────────────────
+  HAProxy TOTAL: ~420 MB ✅
+
+Linux Kernel (TCP socketi):
+  10,000 × 130 KB = 1,300 MB
+  
+OS + ostalo: ~1,000 MB
+
+────────────────────────────────────
+TOTAL RAM: ~2,800 MB (~3 GB)
+
+Na 8 GB serveru:
+- Korišteno: 3 GB
+- Slobodno: 5 GB ✅ SIGURNO!
+```
+
+---
+
+### Optimizacije
+
+#### 1. Smanji HAProxy buffer-e:
+```
+global
+    tune.bufsize 8192  # 8 KB umjesto 16 KB
+
+Ušteda:
+10,000 × (16KB - 8KB) × 2 = 160 MB
+```
+
+#### 2. Smanji kernel TCP buffer-e:
+```bash
+sysctl -w net.ipv4.tcp_rmem="4096 32768 2097152"
+sysctl -w net.ipv4.tcp_wmem="4096 32768 2097152"
+
+Ušteda:
+10,000 × 55 KB = 550 MB
+```
+
+#### 3. Connection limit:
+```
+global
+    maxconn 20000  # Eksplicitni limit
+```
+
+---
+
+### Kada treba više RAM-a?
+
+| Konekcije | HAProxy | Kernel | OS | TOTAL | Preporuka |
+|-----------|---------|--------|-----|-------|-----------|
+| 10,000 | 420 MB | 1.3 GB | 1 GB | ~3 GB | **8 GB** ✅ |
+| 50,000 | 1.8 GB | 6.5 GB | 1 GB | ~10 GB | **16 GB** ✅ |
+| 100,000 | 3.5 GB | 13 GB | 1 GB | ~18 GB | **32 GB** ✅ |
+| 200,000 | 7 GB | 26 GB | 1 GB | ~34 GB | **64 GB ili 2× servera** |
+
+---
+
+## Docker Containeri i Socketi
+
+### Ključno razumijevanje
+
+```
+❌ POGREŠNO:
+Svaki container ima svoj Linux kernel
+Svaki container ima svoj TCP/IP stack
+Containeri drže sockete u svojoj memoriji
+
+✅ TAČNO:
+SVI containeri DELE JEDAN kernel (host-ov)
+Kernel drži SVE sockete
+Containeri samo KORISTE kernel sockete
+```
+
+---
+
+### Kako to funkcioniše
+
+```
+┌────────────────────────────────────┐
+│ Linux Kernel (Host OS)             │
+│                                    │
+│ TCP/IP Stack (JEDAN za sve!):     │
+│   Socket #1: 172.17.0.2:80 ↔ ...  │ ← Traefik
+│   Socket #2: 172.17.0.5:5000 ↔ ...│ ← web-api
+│   Socket #3: 172.17.0.9:6379 ↔ ...│ ← Redis
+│                                    │
+│ File Descriptor Tables:            │
+│   PID 5678: fd=123 → Socket #1     │
+│   PID 6789: fd=42 → Socket #2      │
+│   PID 7890: fd=200 → Socket #3     │
+└────────────────────────────────────┘
+        ↑           ↑           ↑
+┌───────┘           │           └────────┐
+│                   │                    │
+┌─────────┐  ┌──────────┐  ┌──────────┐
+│ Traefik │  │ web-api  │  │  Redis   │
+│Container│  │Container │  │Container │
+│         │  │          │  │          │
+│ fd=123  │  │ fd=42    │  │ fd=200   │
+└─────────┘  └──────────┘  └──────────┘
+```
+
+---
+
+### Docker namespaces
+
+Docker izoluje containere pomoću **Linux namespaces**:
+
+#### PID namespace
+```
+Unutar containera:
+ps aux
+PID  CMD
+1    /app/dotnet
+
+Na host-u:
+ps aux | grep dotnet
+PID  CMD
+6789 /app/dotnet
+
+Container "misli" da je PID 1,
+zapravo je PID 6789 na host-u!
+```
+
+#### Network namespace
+```
+Container ima:
+- Virtuelni network interface (eth0@container)
+- Svoj IP (172.17.0.5)
+- Svoj routing table
+
+ALI kernel je ISTI!
+Kernel routing povezuje sve namespace-ove
+```
+
+---
+
+### Provjera - socketi na host-u vs u containeru
+
+#### Na host-u (Nomad worker):
+```bash
+ss -tnp | grep 172.17.0.5:5000
+ESTAB 0 0 172.17.0.5:5000 172.17.0.2:xyz users:(("dotnet",pid=6789,fd=42))
+                                                            ↑         ↑
+                                                    Pravi PID    File desc
+```
+
+#### Unutar containera:
+```bash
+docker exec web-api ss -tnp
+ESTAB 0 0 172.17.0.5:5000 172.17.0.2:xyz users:(("dotnet",pid=1,fd=42))
+                                                            ↑      ↑
+                                              Container PID     Isti fd!
+```
+
+**Isti socket! Isti fd! Različiti PID!**
+
+---
+
+### Memory lokacija
+
+```
+RAM fizička memorija:
+
+┌──────────────────────────────────┐
+│ Kernel Space (privileged)        │
+│                                  │
+│ - TCP socket structures ← OVDJE!│
+│ - TCP send/receive buffers       │
+│ - Network namespace data         │
+│ - File descriptor tables         │
+└──────────────────────────────────┘
+│ User Space (unprivileged)        │
+│                                  │
+│ Container proces (PID 6789):     │
+│   - fd=42 (samo broj!)           │
+│   - Aplikacijski buffer          │
+│   - .NET objects                 │
+└──────────────────────────────────┘
+```
+
+**Socket data JE u kernelu!**  
+**Container ima samo REFERENCU (fd broj)!**
+
+---
+
+## SignalR i Redis Backplane
+
+### SignalR hijerarhija
+
+```
+SignalR (Microsoft library)
+  └─ Transport layer:
+      ├─ WebSocket (prvi izbor)
+      ├─ Server-Sent Events (fallback)
+      └─ Long Polling (krajnji fallback)
+```
+
+### Problem bez Redis backplane-a
+
+```
+3 web-api instance:
+
+User A → web-api-1 (WebSocket konekcija)
+User B → web-api-2 (WebSocket konekcija)
+User C → web-api-3 (WebSocket konekcija)
+
+Admin update stiže na web-api-1:
+await Clients.All.SendAsync("OddsUpdated", ...);
+
+Šta se dešava:
+web-api-1 → šalje SAMO User A ✅
+web-api-2 → ne zna ništa o update-u ❌
+web-api-3 → ne zna ništa o update-u ❌
+
+User B i C NE DOBIJAJU update! ❌
+
+Rješenje: STICKY SESSIONS
+→ User uvijek mora ići na istu instancu
+→ Neravnomerna distribucija
+→ Ako instanca umre, svi korisnici se disconnectuju
+```
+
+---
+
+### Sa Redis backplane-om
+
+```
+3 web-api instance:
+
+User A → web-api-1 (WebSocket)
+User B → web-api-2 (WebSocket)
+User C → web-api-3 (WebSocket)
+
+Admin update stiže na web-api-1:
+await Clients.All.SendAsync("OddsUpdated", ...);
+
+Flow:
+1. web-api-1 → Redis PUBLISH "signalr:channel" {data}
+
+2. Redis broadcast SVE instance:
+   Redis → web-api-1 (subscriber)
+   Redis → web-api-2 (subscriber)
+   Redis → web-api-3 (subscriber)
+
+3. Svaka instanca šalje SVOJIM korisnicima:
+   web-api-1 → User A ✅
+   web-api-2 → User B ✅
+   web-api-3 → User C ✅
+
+SVI dobijaju update! ✅
+NE TREBA sticky session! ✅
+```
+
+---
+
+### .NET konfiguracija
+
+```csharp
+// Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+// SignalR sa Redis backplane:
+builder.Services.AddSignalR()
+    .AddStackExchangeRedis("redis.service.consul:6379", options => {
+        options.Configuration.ChannelPrefix = "signalr";
+    });
+
+var app = builder.Build();
+app.MapHub<BettingHub>("/bettingHub");
+app.Run();
+```
+
+---
+
+### Redis socketi
+
+Svaka web-api instanca ima:
+- **N socketa** prema korisnicima (WebSocket konekcije)
+- **1 socket** prema Redis-u (pub/sub)
+
+```
+web-api-1:
+  fd=42, fd=43, fd=44... (WebSocket konekcije)
+  fd=100 (Redis pub/sub socket)
+
+web-api-2:
+  fd=50, fd=51, fd=52... (WebSocket konekcije)
+  fd=101 (Redis pub/sub socket)
+
+web-api-3:
+  fd=60, fd=61, fd=62... (WebSocket konekcije)
+  fd=102 (Redis pub/sub socket)
+```
+
+---
+
+## Praktični Primjeri
+
+### Debugging socketi
+
+#### Na browseru:
+```javascript
+// Chrome DevTools → Network tab → WS filter
+// Vidiš:
+wss://betting.com/bettingHub
+Status: 101 Switching Protocols
+Type: websocket
+```
+
+#### Na HAProxy serveru:
+```bash
+# Sve HAProxy konekcije:
+ss -tnp | grep haproxy
+
+# Output:
+ESTAB 0 0 203.45.67.89:443 93.45.67.89:54321 users:(("haproxy",pid=5678,fd=567))
+ESTAB 0 0 192.168.1.1:xyz 192.168.1.10:80 users:(("haproxy",pid=5678,fd=890))
+
+# Stats:
+echo "show stat" | socat stdio /var/run/haproxy.sock | grep web-api
+```
+
+#### Unutar Traefik containera:
+```bash
+docker exec traefik ss -tnp
+
+# Output:
+ESTAB 0 0 172.17.0.2:80 192.168.1.1:xyz users:(("traefik",pid=1,fd=123))
+ESTAB 0 0 172.17.0.2:xyz 172.17.0.5:5000 users:(("traefik",pid=1,fd=456))
+```
+
+#### Unutar web-api containera:
+```bash
+docker exec web-api ss -tnp
+
+# Output:
+ESTAB 0 0 172.17.0.5:5000 172.17.0.2:xyz users:(("dotnet",pid=1,fd=42))
+ESTAB 0 0 172.17.0.5:xyz 172.17.0.9:6379 users:(("dotnet",pid=1,fd=100))
+```
+
+---
+
+### Monitoring setup
+
+#### Prometheus + Grafana:
+
+```yaml
+# HAProxy exporter:
+- job_name: 'haproxy'
+  static_configs:
+    - targets: ['haproxy:9101']
+  
+  metrics:
+    - haproxy_backend_current_sessions
+    - haproxy_process_resident_memory_bytes
+    - haproxy_process_max_fds
+
+# Node exporter (kernel):
+- job_name: 'node'
+  static_configs:
+    - targets: ['nomad-worker:9100']
+  
+  metrics:
+    - node_memory_MemAvailable_bytes
+    - node_sockstat_TCP_inuse
+    - node_sockstat_TCP_mem_bytes
+    - node_filefd_allocated
+```
+
+#### Grafana alert:
+```yaml
+- alert: HighMemoryUsage
+  expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
+  for: 5m
+  annotations:
+    summary: "Less than 10% RAM free!"
+
+- alert: TooManyConnections
+  expr: haproxy_backend_current_sessions{backend="web-api"} > 50000
+  for: 2m
+  annotations:
+    summary: "More than 50k WebSocket connections!"
+```
+
+---
+
+### Load testing WebSocket
+
+```bash
+# Artillery load test:
+artillery run websocket-test.yml
+
+# websocket-test.yml:
+config:
+  target: "wss://betting.com"
+  phases:
+    - duration: 60
+      arrivalRate: 100  # 100 novih konekcija/sec
+scenarios:
+  - engine: ws
+    flow:
+      - connect:
+          url: "/bettingHub"
+      - think: 300  # Ostane konekcija 5 min
+```
+
+---
+
+### Troubleshooting
+
+#### Problem: WebSocket disconnects nakon 60s
+
+```bash
+# Check HAProxy timeouts:
+grep timeout /etc/haproxy/haproxy.cfg
+
+# Ako vidiš:
+timeout tunnel 60s  # ← PROBLEM!
+
+# Fix:
+timeout tunnel 3600s  # 1 sat
+```
+
+#### Problem: "Too many open files"
+
+```bash
+# Check limit:
+ulimit -n
+1024  # PREMALO!
+
+# Fix:
+ulimit -n 65536
+
+# Permanent:
+echo "* soft nofile 65536" >> /etc/security/limits.conf
+echo "* hard nofile 65536" >> /etc/security/limits.conf
+```
+
+#### Problem: Container ne može da se konektuje
+
+```bash
+# Check Nomad allocation:
+nomad alloc status <alloc-id>
+
+# Check if listening:
+docker exec web-api ss -tlnp | grep :5000
+
+# Check Consul service:
+consul catalog service web-api
+```
+
+---
+
+## Summary - Ključne Informacije
+
+### Memory Consumption za 10,000 WebSocket konekcija
+
+| Komponenta | Memory |
+|------------|--------|
+| HAProxy proces | ~420 MB |
+| Linux kernel (TCP socketi) | ~1,300 MB |
+| OS + ostalo | ~1,000 MB |
+| **TOTAL** | **~3 GB** |
+| **Preporuka** | **8 GB RAM server** ✅ |
+
+---
+
+### Socket Limits
+
+```bash
+# Default (premalo!):
+ulimit -n: 1024
+
+# Production (preporučeno):
+ulimit -n: 65536
+fs.file-max: 2097152
+net.netfilter.nf_conntrack_max: 200000
+```
+
+---
+
+### Stateful vs Stateless
+
+| HTTP | WebSocket |
+|------|-----------|
+| Stateless | Stateful |
+| ~40 KB/request | ~200 KB/connection |
+| Kratkotrajna (ms) | Dugotrajna (sati) |
+| Lako skalirati | Sticky sessions / Redis |
+| REST API | Real-time updates |
+
+---
+
+### Infrastructure Stack
+
+```
+Browser
+  ↓ (1 socket)
+HAProxy (Native)
+  ↓ (2 socketa)
+Traefik (Docker)
+  ↓ (2 socketa)
+Web-API (Docker)
+  ↓ (2 socketa - WebSocket + Redis)
+Redis (Docker)
+
+TOTAL: 7 socketa po WebSocket konekciji
+```
+
+---
+
+### WebSocket Mane
+
+1. **Stateful** → više RAM-a (~200 KB po konekciji)
+2. **No caching** → ne možeš koristiti CDN
+3. **Proxy complexity** → HAProxy tunnel mode obavezan
+4. **Horizontal scaling** → Redis backplane ili sticky sessions
+5. **Security** → DDoS rizik, CSRF, input validation
+
+---
+
+### Optimizacije
+
+```
+HAProxy:
+  tune.bufsize 8192  # Smanji buffer
+
+Kernel:
+  net.ipv4.tcp_rmem="4096 32768 2097152"
+  net.ipv4.tcp_wmem="4096 32768 2097152"
+
+Redis backplane:
+  AddStackExchangeRedis() # SignalR skaliranje
+
+Monitoring:
+  Prometheus + Grafana alerts
+```
+
+---
+
+### Best Practices
+
+✅ Redis backplane za SignalR (ne treba sticky sessions)  
+✅ HAProxy `timeout tunnel 3600s` (1 sat minimum)  
+✅ Povećati `ulimit -n` na 65536+  
+✅ Monitoring memory i konekcija (Grafana alerts)  
+✅ Horizontal scaling za 50,000+ konekcija  
+✅ Optimizovani kernel TCP bufferi  
+✅ Origin checking za security (CSRF protection)  
+
+---
+
+## Reference
+
+- [HAProxy WebSocket Documentation](https://www.haproxy.com/blog/websockets-load-balancing-with-haproxy)
+- [SignalR Redis Backplane](https://learn.microsoft.com/en-us/aspnet/core/signalr/redis-backplane)
+- [Linux Socket Programming](https://beej.us/guide/bgnet/)
+- [Nomad Service Discovery](https://developer.hashicorp.com/nomad/docs/integrations/consul)
+- [Docker Networking](https://docs.docker.com/network/)
+
+---
+
+**Autor:** Mica&teca  
+**Datum:** Januar 2026  
+**Stack:** HAProxy + Traefik + Nomad + Consul + SignalR + Redis

@@ -1,1 +1,622 @@
 
+# Linux Ubuntu Handbook - Brza Referenca
+
+> Praktičan vodič kroz najvažnije Linux komande za svakodnevni rad
+
+---
+
+## 📁 File Management & Navigation
+
+### Navigacija kroz direktorijume
+
+```bash
+# Prikaži trenutni direktorijum
+pwd
+
+# Lista fajlova i direktorijuma
+ls                    # Osnovna lista
+ls -l                 # Detaljna lista
+ls -la                # Detaljna lista sa skrivenim fajlovima
+ls -lh                # Sa čitljivim veličinama (KB, MB, GB)
+ls -lt                # Sortirano po vremenu izmene (najnovije prvo)
+ls -ltr               # Sortirano po vremenu izmene (najstarije prvo)
+
+# Promena direktorijuma
+cd /path/to/directory # Idi u specifičan direktorijum
+cd ~                  # Idi u home direktorijum
+cd -                  # Vrati se u prethodni direktorijum
+cd ..                 # Idi jedan nivo iznad
+cd ../..              # Idi dva nivoa iznad
+```
+
+### Kreiranje i brisanje
+
+```bash
+# Kreiranje direktorijuma
+mkdir dirname                  # Kreiraj direktorijum
+mkdir -p path/to/nested/dir   # Kreiraj sa svim parent direktorijumima
+
+# Kreiranje fajlova
+touch filename.txt            # Kreiraj prazan fajl
+touch file1.txt file2.txt     # Kreiraj više fajlova odjednom
+
+# Brisanje
+rm filename.txt               # Obriši fajl
+rm -i filename.txt            # Obriši sa potvrdom
+rm -f filename.txt            # Forsiraj brisanje bez potvrde
+rm -rf dirname/               # Obriši direktorijum i sav sadržaj (OPREZNO!)
+rmdir dirname                 # Obriši prazan direktorijum
+```
+
+### Kopiranje i premeštanje
+
+```bash
+# Kopiranje
+cp source.txt destination.txt           # Kopiraj fajl
+cp -r source_dir/ destination_dir/      # Kopiraj direktorijum rekurzivno
+cp -p source.txt dest.txt               # Zadrži permissions i timestamps
+cp -v source.txt dest.txt               # Verbose mode (prikaži šta se kopira)
+cp *.txt backup/                        # Kopiraj sve .txt fajlove
+
+# Premeštanje/Preimenovanje
+mv oldname.txt newname.txt              # Preimenuj fajl
+mv file.txt /path/to/destination/       # Premesti fajl
+mv -i file.txt destination/             # Premesti sa potvrdom ako fajl postoji
+mv *.log /var/logs/                     # Premesti sve .log fajlove
+```
+
+---
+
+## 🔎 Viewing & Finding Files
+
+### Pregledanje sadržaja fajlova
+
+```bash
+# Cat - prikaži ceo fajl
+cat filename.txt                        # Prikaži sadržaj
+cat file1.txt file2.txt                 # Prikaži više fajlova
+cat file1.txt file2.txt > merged.txt    # Spoji fajlove
+
+# Less - stranični prikaz (preporučeno za velike fajlove)
+less filename.txt
+# Navigacija u less:
+#   Space/f - sledeća strana
+#   b - prethodna strana
+#   /pattern - pretraga napred
+#   ?pattern - pretraga nazad
+#   n - sledeći rezultat pretrage
+#   q - izlaz
+
+# Head i Tail - prikaži početak/kraj fajla
+head filename.txt                       # Prvih 10 linija
+head -n 20 filename.txt                 # Prvih 20 linija
+tail filename.txt                       # Poslednjih 10 linija
+tail -n 50 filename.txt                 # Poslednjih 50 linija
+tail -f /var/log/syslog                 # Prati fajl u realnom vremenu (za logove)
+tail -f -n 100 application.log          # Prati poslednjih 100 linija
+
+# Wc - brojanje
+wc filename.txt                         # Broj linija, reči i karaktera
+wc -l filename.txt                      # Samo broj linija
+```
+
+### Pretraga sa grep
+
+```bash
+# Osnovna pretraga
+grep "search_term" filename.txt                      # Pretraži u fajlu
+grep -i "search_term" filename.txt                   # Case-insensitive pretraga
+grep -r "search_term" /path/to/directory/            # Rekurzivna pretraga
+grep -n "search_term" filename.txt                   # Prikaži broj linije
+grep -v "exclude_term" filename.txt                  # Inverzna pretraga (prikaži linije BEZ ovog)
+grep -c "search_term" filename.txt                   # Broj poklapanja
+
+# Napredna pretraga
+grep -E "pattern1|pattern2" filename.txt             # Extended regex (OR)
+grep -A 3 "search_term" filename.txt                 # Prikaži i 3 linije posle
+grep -B 3 "search_term" filename.txt                 # Prikaži i 3 linije pre
+grep -C 3 "search_term" filename.txt                 # Prikaži 3 linije pre i posle
+grep -l "search_term" *.txt                          # Prikaži samo imena fajlova
+grep --color "search_term" filename.txt              # Oboj rezultate
+
+# Korisni primeri
+grep "ERROR" /var/log/application.log | tail -n 50  # Poslednjih 50 error logova
+grep -r "TODO" --include="*.py" .                    # Nađi TODO u Python fajlovima
+ps aux | grep nginx                                  # Nađi Nginx procese
+```
+
+### Pronalaženje fajlova sa find
+
+```bash
+# Osnovna pretraga
+find /path/to/search -name "filename.txt"            # Po imenu
+find . -name "*.log"                                 # Svi .log fajlovi
+find . -iname "*.LOG"                                # Case-insensitive po imenu
+find /home -type f                                   # Samo fajlovi
+find /home -type d                                   # Samo direktorijumi
+
+# Pretraga po veličini
+find . -size +100M                                   # Fajlovi veći od 100MB
+find . -size -1M                                     # Fajlovi manji od 1MB
+find /var/log -size +500M -exec ls -lh {} \;         # Pronađi i prikaži velike fajlove
+
+# Pretraga po vremenu
+find . -mtime -7                                     # Izmenjeni u poslednjih 7 dana
+find . -mtime +30                                    # Izmenjeni pre više od 30 dana
+find . -atime -1                                     # Pristupani u poslednjih 24h
+find . -mmin -60                                     # Izmenjeni u poslednjih 60 minuta
+
+# Pretraga po permissions
+find . -perm 777                                     # Fajlovi sa 777 permissions
+find . -user username                                # Fajlovi određenog korisnika
+
+# Kombinovanje sa akcijama
+find . -name "*.tmp" -delete                         # Pronađi i obriši
+find . -name "*.log" -exec grep "ERROR" {} \;        # Pronađi i pretraži
+find . -type f -name "*.txt" -exec wc -l {} \;       # Prebroj linije u svim .txt
+```
+
+---
+
+## 🛠️ System & Process Management
+
+### Informacije o sistemu
+
+```bash
+# Osnovne info
+uname -a                    # Sve sistemske informacije
+hostnamectl                 # Hostname i OS info
+lsb_release -a              # Ubuntu verzija
+uptime                      # Koliko dugo sistem radi
+whoami                      # Trenutni korisnik
+who                         # Ko je ulogovan
+last                        # Poslednji login-i
+
+# Resursi
+free -h                     # Memorija (human-readable)
+df -h                       # Disk space (human-readable)
+df -i                       # Inode usage
+du -sh /path/to/directory   # Veličina direktorijuma
+du -sh *                    # Veličina svih stavki u trenutnom dir
+du -h --max-depth=1         # Veličine jedan nivo dubine
+
+# CPU i hardware
+lscpu                       # CPU informacije
+lsblk                       # Block devices (diskovi)
+lsusb                       # USB uređaji
+lspci                       # PCI uređaji
+```
+
+### Process Management
+
+```bash
+# Prikazivanje procesa
+ps                          # Procesi trenutnog terminala
+ps aux                      # Svi procesi (detaljno)
+ps aux | grep nginx         # Filtriraj specifičan proces
+pstree                      # Stablo procesa
+pgrep -a nginx              # Pronađi procese po imenu
+
+# Top - real-time monitoring
+top                         # Osnovna verzija
+htop                        # Napredna verzija (ako je instaliran)
+# Top komande:
+#   P - sortiraj po CPU
+#   M - sortiraj po memoriji
+#   k - ubij proces (kill)
+#   q - izlaz
+
+# Htop komande (ako je instaliran):
+sudo apt install htop
+htop
+#   F3 - pretraga
+#   F4 - filter
+#   F5 - tree view
+#   F6 - sortiraj po
+#   F9 - kill proces
+#   F10 - izlaz
+
+# Kontrola procesa
+kill PID                    # Ubij proces (SIGTERM)
+kill -9 PID                 # Forsiraj ubijanje (SIGKILL)
+killall process_name        # Ubij sve procese sa tim imenom
+pkill -f pattern            # Ubij procese koji odgovaraju patternu
+
+# Background procesi
+command &                   # Pokreni u background-u
+jobs                        # Lista background poslova
+fg %1                       # Vrati job 1 u foreground
+bg %1                       # Nastavi job 1 u background-u
+nohup command &             # Pokreni tako da nastavi nakon logout-a
+```
+
+### Servisi (systemd)
+
+```bash
+# Status i kontrola
+sudo systemctl status service_name      # Status servisa
+sudo systemctl start service_name       # Pokreni servis
+sudo systemctl stop service_name        # Zaustavi servis
+sudo systemctl restart service_name     # Restartuj servis
+sudo systemctl reload service_name      # Reload konfiguracije
+
+# Auto-start
+sudo systemctl enable service_name      # Omogući auto-start pri boot-u
+sudo systemctl disable service_name     # Onemogući auto-start
+sudo systemctl is-enabled service_name  # Proveri da li je enabled
+
+# Lista servisa
+systemctl list-units --type=service     # Svi servisi
+systemctl list-units --state=running    # Running servisi
+systemctl list-units --state=failed     # Failed servisi
+
+# Logovi
+journalctl -u service_name              # Logovi za servis
+journalctl -u service_name -f           # Prati logove
+journalctl -u service_name --since today # Logovi od danas
+journalctl -xe                          # Poslednji logovi sa detaljima
+```
+
+---
+
+## 🔒 Permissions, Users & Security
+
+### File Permissions
+
+```bash
+# Čitanje permissions: drwxrwxrwx
+# d - directory, - - file
+# rwx rwx rwx
+# ^^^ ^^^ ^^^
+# owner group others
+# r=4, w=2, x=1
+
+# Chmod - promena permissions
+chmod 755 script.sh                     # rwxr-xr-x
+chmod 644 file.txt                      # rw-r--r--
+chmod +x script.sh                      # Dodaj execute permission
+chmod -x script.sh                      # Ukloni execute permission
+chmod u+x script.sh                     # Execute samo za ownera
+chmod g+w file.txt                      # Write za grupu
+chmod o-r file.txt                      # Ukloni read za others
+chmod -R 755 /path/to/directory         # Rekurzivno za direktorijum
+
+# Česte kombinacije:
+# 777 - rwxrwxrwx (svi mogu sve - OPASNO!)
+# 755 - rwxr-xr-x (owner može sve, ostali read+execute)
+# 644 - rw-r--r-- (owner može pisati, ostali samo čitaju)
+# 600 - rw------- (samo owner može čitati/pisati)
+# 700 - rwx------ (samo owner ima pristup)
+
+# Chown - promena vlasništva
+sudo chown username file.txt                    # Promeni ownera
+sudo chown username:groupname file.txt          # Promeni ownera i grupu
+sudo chown -R username:groupname directory/     # Rekurzivno
+sudo chgrp groupname file.txt                   # Promeni samo grupu
+```
+
+### User Management
+
+```bash
+# Informacije o korisnicima
+id                              # Tvoj user ID i grupe
+id username                     # ID za drugog korisnika
+groups                          # Tvoje grupe
+groups username                 # Grupe drugog korisnika
+
+# Dodavanje/brisanje korisnika (samo sudo)
+sudo adduser username           # Dodaj novog korisnika (interaktivno)
+sudo useradd username           # Dodaj korisnika (osnovno)
+sudo userdel username           # Obriši korisnika
+sudo userdel -r username        # Obriši korisnika i home dir
+
+# Upravljanje grupama
+sudo groupadd groupname         # Kreiraj grupu
+sudo usermod -aG groupname user # Dodaj korisnika u grupu
+sudo gpasswd -d user groupname  # Ukloni korisnika iz grupe
+
+# Promene passwords
+passwd                          # Promeni svoj password
+sudo passwd username            # Promeni password drugog korisnika
+
+# Sudo privileges
+sudo visudo                     # Edituj sudoers fajl (BEZBEDNO)
+# Dodaj korisnika u sudo grupu:
+sudo usermod -aG sudo username
+```
+
+---
+
+## 📦 Archiving & Compression
+
+### Tar arhive
+
+```bash
+# Kreiranje arhive
+tar -cvf archive.tar directory/                 # Kreiraj tar
+tar -czvf archive.tar.gz directory/             # Kreiraj tar.gz (gzip)
+tar -cjvf archive.tar.bz2 directory/            # Kreiraj tar.bz2 (bzip2)
+tar -czvf backup.tar.gz file1 file2 dir/        # Arhiviraj više stavki
+
+# Flags objašnjenje:
+# c - create (kreiraj)
+# x - extract (izvuci)
+# v - verbose (prikaži šta radi)
+# f - file (specifikuj ime fajla)
+# z - gzip kompresija
+# j - bzip2 kompresija
+# t - list (lista sadržaja)
+
+# Izvlačenje arhive
+tar -xvf archive.tar                            # Izvuci tar
+tar -xzvf archive.tar.gz                        # Izvuci tar.gz
+tar -xjvf archive.tar.bz2                       # Izvuci tar.bz2
+tar -xzvf archive.tar.gz -C /path/to/extract/   # Izvuci u specifičan dir
+
+# Pregled sadržaja bez izvlačenja
+tar -tvf archive.tar                            # Lista fajlova u tar
+tar -tzvf archive.tar.gz                        # Lista fajlova u tar.gz
+
+# Dodavanje u postojeću arhivu
+tar -rvf archive.tar newfile.txt                # Dodaj fajl u tar (ne radi sa .gz)
+
+# Izvuci samo određene fajlove
+tar -xzvf archive.tar.gz file1.txt dir/file2.txt
+```
+
+### Zip arhive
+
+```bash
+# Kreiranje zip arhive
+zip archive.zip file.txt                        # Zip jedan fajl
+zip -r archive.zip directory/                   # Zip direktorijum rekurzivno
+zip archive.zip file1.txt file2.txt             # Zip više fajlova
+
+# Izvlačenje zip arhive
+unzip archive.zip                               # Izvuci sve
+unzip archive.zip -d /path/to/extract/          # Izvuci u specifičan dir
+unzip -l archive.zip                            # Lista sadržaja
+
+# Gzip (samo fajlovi, ne direktorijumi)
+gzip file.txt                                   # Kompresuj (pravi file.txt.gz i briše original)
+gzip -k file.txt                                # Kompresuj i zadrži original
+gunzip file.txt.gz                              # Dekompresuj
+gzip -d file.txt.gz                             # Dekompresuj (isto kao gunzip)
+```
+
+---
+
+## 🌐 Networking & Downloads
+
+### Network informacije
+
+```bash
+# IP adresa i network interfaces
+ip addr show                            # Sve network interfaces
+ip a                                    # Skraćeno
+ifconfig                                # Stariji način (ako je instaliran)
+hostname -I                             # Samo IP adrese
+
+# Network connections
+netstat -tulpn                          # Svi listening portovi
+ss -tulpn                               # Moderniji od netstat
+lsof -i :80                             # Šta koristi port 80
+sudo netstat -anp | grep :8080          # Proveri port 8080
+
+# DNS i connectivity
+ping google.com                         # Proveri konekciju
+ping -c 4 google.com                    # Pošalji samo 4 paketa
+nslookup google.com                     # DNS lookup
+dig google.com                          # Detaljni DNS info
+host google.com                         # Jednostavan DNS lookup
+traceroute google.com                   # Prati rutu do hosta
+
+# Firewall (ufw)
+sudo ufw status                         # Status firewall-a
+sudo ufw enable                         # Omogući firewall
+sudo ufw allow 22                       # Dozvoli port 22 (SSH)
+sudo ufw allow 80/tcp                   # Dozvoli port 80 TCP
+sudo ufw deny 23                        # Blokiraj port 23
+sudo ufw delete allow 80                # Ukloni pravilo
+```
+
+### Downloads sa wget i curl
+
+```bash
+# Wget - download fajlova
+wget https://example.com/file.zip                       # Preuzmi fajl
+wget -O custom_name.zip https://example.com/file.zip    # Preuzmi sa custom imenom
+wget -c https://example.com/large_file.zip              # Nastavi preuzimanje (-c = continue)
+wget -b https://example.com/file.zip                    # Preuzmi u background-u
+wget -r https://example.com/directory/                  # Rekurzivno preuzimanje
+wget --limit-rate=200k https://example.com/file.zip     # Ograniči brzinu
+wget -i urls.txt                                        # Preuzmi sve URL-ove iz fajla
+
+# Curl - transfer podataka
+curl https://example.com                                # Prikaži sadržaj
+curl -O https://example.com/file.zip                    # Preuzmi fajl (čuva original ime)
+curl -o custom.zip https://example.com/file.zip         # Preuzmi sa custom imenom
+curl -L https://example.com                             # Prati redirects
+curl -I https://example.com                             # Samo HTTP headers
+curl -s https://api.example.com/data                    # Silent mode (bez progress)
+
+# API requests sa curl
+curl -X GET https://api.example.com/users               # GET request
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"John"}'                                  # POST sa JSON
+curl -X DELETE https://api.example.com/users/1          # DELETE request
+curl -u username:password https://api.example.com       # Basic auth
+
+# Provera connectivity
+curl -I https://google.com                              # Proveri da li je sajt dostupan
+curl -o /dev/null -s -w "%{http_code}\n" https://google.com  # Samo HTTP status code
+```
+
+### SSH i SCP
+
+```bash
+# SSH - remote login
+ssh username@hostname                                   # Osnovna konekcija
+ssh username@192.168.1.100                              # Konekcija sa IP
+ssh -p 2222 username@hostname                           # Custom port
+ssh -i ~/.ssh/id_rsa username@hostname                  # Sa specific key
+ssh -L 8080:localhost:80 username@hostname              # Port forwarding
+
+# SCP - secure copy
+scp file.txt username@hostname:/path/to/destination     # Kopiraj na remote
+scp username@hostname:/path/to/file.txt .               # Kopiraj sa remote
+scp -r directory/ username@hostname:/path/              # Kopiraj direktorijum
+scp -P 2222 file.txt username@hostname:/path/           # Custom SSH port
+
+# Rsync - sinhronizacija (efikasnija od scp)
+rsync -avz source/ username@hostname:/destination/      # Sync sa remote
+rsync -avz username@hostname:/source/ ./destination/    # Sync sa remote
+# a - archive mode, v - verbose, z - kompresija
+```
+
+---
+
+## 🔧 Package Management (apt)
+
+```bash
+# Ažuriranje sistema
+sudo apt update                         # Ažuriraj listu paketa
+sudo apt upgrade                        # Instaliraj ažuriranja
+sudo apt full-upgrade                   # Upgrade sa dependencies handling
+sudo apt dist-upgrade                   # Distribution upgrade
+
+# Instalacija i brisanje
+sudo apt install package_name           # Instaliraj paket
+sudo apt install package1 package2      # Instaliraj više paketa
+sudo apt remove package_name            # Ukloni paket
+sudo apt purge package_name             # Ukloni paket i config fajlove
+sudo apt autoremove                     # Ukloni nepotrebne dependencies
+
+# Pretraga i informacije
+apt search keyword                      # Pretraži pakete
+apt show package_name                   # Detalji o paketu
+apt list --installed                    # Lista instaliranih paketa
+apt list --upgradable                   # Lista paketa za upgrade
+
+# Čišćenje
+sudo apt clean                          # Obriši preuzete .deb fajlove
+sudo apt autoclean                      # Obriši stare verzije
+```
+
+---
+
+## 💡 Korisni Trikovi i Shortcuts
+
+### Bash Shortcuts (u terminalu)
+
+```
+Ctrl + C        - Zaustavi trenutni proces
+Ctrl + Z        - Pauziraj proces (može se nastaviti sa 'fg' ili 'bg')
+Ctrl + D        - Logout / zatvori terminal (isto kao 'exit')
+Ctrl + L        - Očisti ekran (isto kao 'clear')
+Ctrl + A        - Idi na početak linije
+Ctrl + E        - Idi na kraj linije
+Ctrl + U        - Obriši od kursora do početka linije
+Ctrl + K        - Obriši od kursora do kraja linije
+Ctrl + W        - Obriši prethodnu reč
+Ctrl + R        - Reverse search kroz history (počni kucati komandu)
+Ctrl + G        - Izađi iz reverse search
+!!              - Ponovi prethodnu komandu
+!$              - Poslednji argument prethodne komande
+Tab             - Auto-complete (pritisni dva puta za opcije)
+```
+
+### History komande
+
+```bash
+history                         # Prikaži command history
+history | grep "keyword"        # Pretraži history
+!123                            # Izvrši komandu broj 123 iz history
+!-2                             # Izvrši pretposlednju komandu
+!!                              # Izvrši poslednju komandu
+sudo !!                         # Izvrši poslednju komandu sa sudo
+^old^new                        # Zameni 'old' sa 'new' u poslednjoj komandi
+```
+
+### Redirekcija i Pipes
+
+```bash
+# Redirekcija output-a
+command > file.txt              # Upiši output u fajl (overwrite)
+command >> file.txt             # Dodaj output u fajl (append)
+command 2> error.log            # Upiši errors u fajl
+command &> all.log              # Upiši output i errors u fajl
+command > /dev/null 2>&1        # Zanemari sav output
+
+# Pipes (kombinovanje komandi)
+command1 | command2             # Output prvog je input drugom
+ps aux | grep nginx             # Filtriraj procese
+cat file.txt | wc -l            # Prebroj linije
+ls -l | grep "\.txt$"           # Lista samo .txt fajlova
+dmesg | tail -20                # Poslednjih 20 kernel messages
+```
+
+### Aliases (prečice)
+
+```bash
+# Dodaj u ~/.bashrc za trajne aliases
+alias ll='ls -lah'
+alias la='ls -A'
+alias update='sudo apt update && sudo apt upgrade'
+alias cls='clear'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ports='sudo netstat -tulpn'
+
+# Reload bashrc nakon izmena:
+source ~/.bashrc
+```
+
+---
+
+## 📝 Napomene i Best Practices
+
+### Opasne komande - OPREZ!
+
+```bash
+rm -rf /            # NIKAD! Obriše ceo sistem
+rm -rf *            # Obriše sve u trenutnom direktorijumu
+chmod -R 777 /      # NIKAD! Bezbednosni rizik
+dd if=/dev/zero of=/dev/sda  # Uništava disk
+```
+
+### Bezbednosne preporuke
+
+- Koristi `sudo` samo kada je neophodno
+- Proveri dva puta pre `rm -rf` komandi
+- Pravi backup važnih fajlova: `cp -r original/ backup/`
+- Koristi `-i` flag za potvrdu: `rm -i file.txt`
+- Proveri permissions pre chmod: `ls -l file.txt`
+- Ne logiraj se kao root direktno
+- Koristi strong passworde
+
+### Performance tips
+
+- Koristi `htop` umesto `top` za bolje monitoring
+- `ncdu` za analizu disk space (instalacija: `sudo apt install ncdu`)
+- `tldr` za brze primere komandi (instalacija: `sudo apt install tldr`)
+- Koristi TAB completion za brže kucanje
+
+---
+
+## 🔗 Dodatni Resursi
+
+- `man command` - Manual page za svaku komandu
+- `command --help` - Brza pomoć za komandu
+- `apropos keyword` - Pretraži man pages po ključnoj reči
+- [https://explainshell.com](https://explainshell.com) - Objašnjenje komandi
+- [https://tldr.sh](https://tldr.sh) - Pojednostavljeni man pages
+
+---
+
+**Verzija:** 1.0  
+**Poslednje ažuriranje:** Januar 2025  
+**Za:** Ubuntu 20.04+
+
+> **Tip:** Drži ovaj fajl u svom home direktorijumu i koristi `less ~/linux-ubuntu-handbook.md` za brz pristup!
